@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Collaborative Canvas</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Join Room Modal -->
+    <div id="join-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="logo">
+                    <span class="logo-icon">🎨</span>
+                    <h1>Collaborative Canvas</h1>
+                </div>
+                <p class="subtitle">Draw together in real-time</p>
+            </div>
+            <form id="join-form">
+                <div class="form-group">
+                    <label for="room-input">Room Name</label>
+                    <input type="text" id="room-input" placeholder="Enter room name..." required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="name-input">Your Name (optional)</label>
+                    <input type="text" id="name-input" placeholder="Anonymous" autocomplete="off">
+                </div>
+                <button type="submit" class="btn-primary">Join Room</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="app" class="hidden">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <span class="logo-icon-small">🎨</span>
+                <span class="room-name" id="room-name-display">Room: ---</span>
+            </div>
+            <div class="header-center">
+                <!-- Toolbar -->
+                <div class="toolbar" id="toolbar">
+                    <!-- Tool Selection -->
+                    <div class="tool-group">
+                        <button class="tool-btn active" data-tool="brush" title="Brush (B)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+                                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+                                <path d="M2 2l7.586 7.586"></path>
+                                <circle cx="11" cy="11" r="2"></circle>
+                            </svg>
+                        </button>
+                        <button class="tool-btn" data-tool="eraser" title="Eraser (E)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8l10-10c.8-.8 2-.8 2.8 0l6 6c.8.8.8 2 0 2.8L14 20"></path>
+                                <path d="M6.5 13.5L11 18"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="separator"></div>
+
+                    <!-- Color Picker -->
+                    <div class="tool-group color-group">
+                        <input type="color" id="color-picker" value="#000000" title="Color">
+                        <div class="color-preview" id="color-preview"></div>
+                        <!-- Quick Colors -->
+                        <div class="quick-colors">
+                            <button class="color-btn" data-color="#000000" style="background:#000000"></button>
+                            <button class="color-btn" data-color="#FFFFFF" style="background:#FFFFFF"></button>
+                            <button class="color-btn" data-color="#FF6B6B" style="background:#FF6B6B"></button>
+                            <button class="color-btn" data-color="#4ECDC4" style="background:#4ECDC4"></button>
+                            <button class="color-btn" data-color="#45B7D1" style="background:#45B7D1"></button>
+                            <button class="color-btn" data-color="#96CEB4" style="background:#96CEB4"></button>
+                            <button class="color-btn" data-color="#FFEAA7" style="background:#FFEAA7"></button>
+                            <button class="color-btn" data-color="#DDA0DD" style="background:#DDA0DD"></button>
+                        </div>
+                    </div>
+
+                    <div class="separator"></div>
+
+                    <!-- Stroke Width -->
+                    <div class="tool-group width-group">
+                        <label class="width-label">Size:</label>
+                        <input type="range" id="stroke-width" min="1" max="50" value="5" title="Stroke Width">
+                        <span class="width-value" id="width-value">5</span>
+                        <div class="width-preview" id="width-preview"></div>
+                    </div>
+
+                    <div class="separator"></div>
+
+                    <!-- Undo/Redo -->
+                    <div class="tool-group">
+                        <button class="tool-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 7v6h6"></path>
+                                <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"></path>
+                            </svg>
+                        </button>
+                        <button class="tool-btn" id="redo-btn" title="Redo (Ctrl+Y)" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 7v6h-6"></path>
+                                <path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="separator"></div>
+
+                    <!-- Clear Canvas -->
+                    <div class="tool-group">
+                        <button class="tool-btn danger" id="clear-btn" title="Clear Canvas">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3,6 5,6 21,6"></polyline>
+                                <path d="M19,6v14a2,2 0 01-2,2H7a2,2 0 01-2-2V6m3,0V4a2,2 0 012-2h4a2,2 0 012,2v2"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="header-right">
+                <!-- User Presence -->
+                <div class="users-panel" id="users-panel">
+                    <div class="users-count" id="users-count">
+                        <span class="count">1</span> online
+                    </div>
+                    <div class="users-list" id="users-list"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Canvas Container -->
+        <main class="canvas-container" id="canvas-container">
+            <!-- Layer 1: Background (white) -->
+            <canvas id="canvas-background" class="canvas-layer"></canvas>
+            <!-- Layer 2: Committed strokes -->
+            <canvas id="canvas-strokes" class="canvas-layer"></canvas>
+            <!-- Layer 3: Active/preview strokes -->
+            <canvas id="canvas-active" class="canvas-layer"></canvas>
+            <!-- Layer 4: Cursors overlay -->
+            <canvas id="canvas-cursors" class="canvas-layer"></canvas>
+        </main>
+
+        <!-- Toast Container -->
+        <div class="toast-container" id="toast-container"></div>
+
+        <!-- Connection Status -->
+        <div class="connection-status" id="connection-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Connecting...</span>
+        </div>
+    </div>
+
+    <!-- Socket.io Client -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Application Scripts -->
+    <script src="canvas.js"></script>
+    <script src="websocket.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

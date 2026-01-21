@@ -190,7 +190,7 @@ io.on('connection', (socket) => {
                     userName: currentUser.name,
                     userColor: currentUser.color
                 },
-                undoRedoState: currentRoom.drawingState.getUndoRedoState()
+                undoRedoState: currentRoom.drawingState.getUndoRedoState(socket.id)
             });
 
             console.log(`[Stroke] Committed stroke ${id} with sequence ${committedStroke.sequence}`);
@@ -240,50 +240,56 @@ io.on('connection', (socket) => {
     /**
      * UNDO
      * 
-     * GLOBAL UNDO - affects all users
-     * Server finds and marks last non-undone stroke
+     * PER-USER UNDO - each user can only undo their own strokes
+     * Server finds and marks last non-undone stroke BY THIS USER
      * Broadcasts to ALL clients
      */
     socket.on('undo', () => {
         if (!currentRoom || !currentUser) return;
 
-        const undoneStroke = currentRoom.drawingState.undo();
+        const undoneStroke = currentRoom.drawingState.undo(socket.id);
 
         if (undoneStroke) {
-            // Broadcast undo to ALL clients
+            // Broadcast undo to ALL clients (everyone sees the visual change)
             io.to(currentRoom.id).emit('undo', {
                 strokeId: undoneStroke.id,
-                userId: socket.id,
-                userName: currentUser.name,
-                undoRedoState: currentRoom.drawingState.getUndoRedoState()
+                odriginalUserId: undoneStroke.userId,
+                requestedBy: socket.id,
+                userName: currentUser.name
             });
 
-            console.log(`[Undo] ${currentUser.name} undid stroke ${undoneStroke.id}`);
+            // Send per-user undo/redo state to only the requesting user
+            socket.emit('undoRedoState', currentRoom.drawingState.getUndoRedoState(socket.id));
+
+            console.log(`[Undo] ${currentUser.name} undid their stroke ${undoneStroke.id}`);
         }
     });
 
     /**
      * REDO
      * 
-     * GLOBAL REDO - affects all users
-     * Server pops from redo stack and restores stroke
+     * PER-USER REDO - each user can only redo their own strokes
+     * Server pops from this user's redo stack and restores stroke
      * Broadcasts to ALL clients
      */
     socket.on('redo', () => {
         if (!currentRoom || !currentUser) return;
 
-        const redoneStroke = currentRoom.drawingState.redo();
+        const redoneStroke = currentRoom.drawingState.redo(socket.id);
 
         if (redoneStroke) {
-            // Broadcast redo to ALL clients
+            // Broadcast redo to ALL clients (everyone sees the visual change)
             io.to(currentRoom.id).emit('redo', {
                 strokeId: redoneStroke.id,
-                userId: socket.id,
-                userName: currentUser.name,
-                undoRedoState: currentRoom.drawingState.getUndoRedoState()
+                odriginalUserId: redoneStroke.userId,
+                requestedBy: socket.id,
+                userName: currentUser.name
             });
 
-            console.log(`[Redo] ${currentUser.name} redid stroke ${redoneStroke.id}`);
+            // Send per-user undo/redo state to only the requesting user
+            socket.emit('undoRedoState', currentRoom.drawingState.getUndoRedoState(socket.id));
+
+            console.log(`[Redo] ${currentUser.name} redid their stroke ${redoneStroke.id}`);
         }
     });
 

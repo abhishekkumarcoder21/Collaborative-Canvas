@@ -13,23 +13,23 @@ const { v4: uuidv4 } = require('uuid');
 class DrawingState {
     constructor(roomId) {
         this.roomId = roomId;
-        
+
         // The canonical operation log - ordered list of all committed strokes
         // Each stroke is immutable once committed
         this.operationLog = [];
-        
+
         // Active strokes being drawn (ephemeral, not yet committed)
         // Key: strokeId, Value: stroke object
         this.activeStrokes = new Map();
-        
-        // Stack of stroke IDs that have been undone (for redo)
-        // Cleared when any new stroke is committed
-        this.redoStack = [];
-        
+
+        // Per-user redo stacks: Map<userId, strokeId[]>
+        // Each user has their own redo stack for their strokes
+        this.redoStacks = new Map();
+
         // Monotonically increasing sequence number
         // This is the ONLY source of ordering truth
         this.sequenceCounter = 0;
-        
+
         // Timestamp of last activity (for room cleanup)
         this.lastActivity = Date.now();
     }
@@ -66,7 +66,7 @@ class DrawingState {
 
         this.activeStrokes.set(stroke.id, stroke);
         this.lastActivity = Date.now();
-        
+
         return stroke;
     }
 
@@ -88,7 +88,7 @@ class DrawingState {
         if (Array.isArray(points)) {
             stroke.points.push(...points);
         }
-        
+
         this.lastActivity = Date.now();
         return stroke;
     }
@@ -118,10 +118,10 @@ class DrawingState {
         this.operationLog.push(stroke);
         this.activeStrokes.delete(strokeId);
 
-        // CRITICAL: Any new operation invalidates the redo stack
-        // This prevents branching history
-        this.redoStack = [];
-        
+        // CRITICAL: Any new operation invalidates that user's redo stack
+        // This prevents branching history for that user
+        this.redoStacks.set(stroke.userId, []);
+
         this.lastActivity = Date.now();
         return stroke;
     }
@@ -155,59 +155,64 @@ class DrawingState {
     }
 
     /**
-     * GLOBAL UNDO
+     * PER-USER UNDO
      * 
      * Algorithm:
      * 1. Scan operationLog from END to START
-     * 2. Find the FIRST stroke where isUndone === false
+     * 2. Find the FIRST stroke where isUndone === false AND userId matches
      * 3. Mark it as isUndone = true
-     * 4. Push its ID to redoStack
+     * 4. Push its ID to that user's redoStack
      * 
-     * This ensures we always undo the most recent visible operation,
-     * regardless of which user created it.
+     * This ensures each user can only undo their own strokes.
      * 
+     * @param {string} userId - The user requesting undo
      * @returns {Object|null} The undone stroke, or null if nothing to undo
      */
-    undo() {
-        // Find last non-undone stroke (reverse iteration)
+    undo(userId) {
+        // Find last non-undone stroke BY THIS USER (reverse iteration)
         for (let i = this.operationLog.length - 1; i >= 0; i--) {
             const stroke = this.operationLog[i];
-            if (!stroke.isUndone) {
+            if (!stroke.isUndone && stroke.userId === userId) {
                 // Mark as undone
                 stroke.isUndone = true;
-                // Push to redo stack
-                this.redoStack.push(stroke.id);
+                // Push to this user's redo stack
+                if (!this.redoStacks.has(userId)) {
+                    this.redoStacks.set(userId, []);
+                }
+                this.redoStacks.get(userId).push(stroke.id);
                 this.lastActivity = Date.now();
                 return stroke;
             }
         }
-        return null; // Nothing to undo
+        return null; // Nothing to undo for this user
     }
 
     /**
-     * GLOBAL REDO
+     * PER-USER REDO
      * 
      * Algorithm:
-     * 1. Pop the last ID from redoStack
+     * 1. Pop the last ID from this user's redoStack
      * 2. Find the corresponding stroke
      * 3. Mark it as isUndone = false
      * 
+     * @param {string} userId - The user requesting redo
      * @returns {Object|null} The redone stroke, or null if nothing to redo
      */
-    redo() {
-        if (this.redoStack.length === 0) {
+    redo(userId) {
+        const userRedoStack = this.redoStacks.get(userId);
+        if (!userRedoStack || userRedoStack.length === 0) {
             return null;
         }
 
-        const strokeId = this.redoStack.pop();
+        const strokeId = userRedoStack.pop();
         const stroke = this.operationLog.find(s => s.id === strokeId);
-        
+
         if (stroke) {
             stroke.isUndone = false;
             this.lastActivity = Date.now();
             return stroke;
         }
-        
+
         return null;
     }
 
@@ -238,21 +243,25 @@ class DrawingState {
                 // Ensure we're sending a clean copy
             })),
             activeStrokes: Array.from(this.activeStrokes.values()),
+            // Note: For full state, we just return if any strokes exist
+            // Per-user state is handled separately via getUndoRedoState(userId)
             canUndo: this.operationLog.some(s => !s.isUndone),
-            canRedo: this.redoStack.length > 0,
+            canRedo: false, // Will be calculated per-user
             sequenceCounter: this.sequenceCounter
         };
     }
 
     /**
-     * Get the current undo/redo capability state
+     * Get the current undo/redo capability state FOR A SPECIFIC USER
      * 
+     * @param {string} userId - The user to check state for
      * @returns {Object} { canUndo, canRedo }
      */
-    getUndoRedoState() {
+    getUndoRedoState(userId) {
+        const userRedoStack = this.redoStacks.get(userId) || [];
         return {
-            canUndo: this.operationLog.some(s => !s.isUndone),
-            canRedo: this.redoStack.length > 0
+            canUndo: this.operationLog.some(s => !s.isUndone && s.userId === userId),
+            canRedo: userRedoStack.length > 0
         };
     }
 
@@ -262,7 +271,7 @@ class DrawingState {
     clear() {
         this.operationLog = [];
         this.activeStrokes.clear();
-        this.redoStack = [];
+        this.redoStacks.clear();
         this.sequenceCounter = 0;
         this.lastActivity = Date.now();
     }
